@@ -2,7 +2,7 @@ import numpy as np
 from scipy import interpolate
 import pandas as pd
 import holoviews as hv
-from holoviews.operation.datashader import rasterize
+# from holoviews.operation.datashader import rasterize
 import networkx as nx
 
 
