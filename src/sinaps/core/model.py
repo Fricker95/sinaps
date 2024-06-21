@@ -29,7 +29,7 @@ import sys
 from line_profiler import profile
 from functools import lru_cache
 
-import sinaps.core.species as species
+import sinaps.core.species as species 
 
 PI = np.pi
 SpatialError = ValueError(
@@ -1080,7 +1080,7 @@ class _SimuChannel:
 			V = V_S[self.idV]
 			S = [V_S[self.idS[k]] for k in range(self.nb_var)]
 			for k, ion in enumerate(ions):
-				y[np.s_[self.idV, k]] += (next(self.J(ion, V, *S, t, **self.params)) * self.k).squeeze()
+				y[self.idV, k] += (next(self.J(ion, V, *S, t, **self.params)) * self.k).squeeze()
 
 class VoltageSource:
 	"""Represents a Voltage Source V = f(t)"""

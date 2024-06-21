@@ -10,16 +10,16 @@ setuptools.setup(
     package_dir={"": "src"},
     python_requires=">=3.10",
     install_requires=[
-        "numpy",
-        "param",
-        "pandas",
-        "quantiphy",
-        "scipy",
-        "hvplot",
-        "networkx",
-        "datashader",
-        "tqdm",
-        "numba",
-        #"pygraphviz" # for macOS use brew install graphviz and build package using proper headers
+        "numpy==1.26.4",
+        "param==1.10.0",
+        "pandas==2.2.1",
+        "quantiphy==2.19",
+        "scipy=1.11.4",
+        "hvplot=0.9.0",
+        "networkx==3.2.1",
+        "datashader==0.16.0",
+        "tqdm==4.66.1",
+        "numba=0.58.1",
+        "pygraphviz==1.12" # for macOS use brew install graphviz and build package using proper headers
     ],
 )
