@@ -245,7 +245,7 @@ class Neuron(param.Parameterized):
 				D = {species: D}
 			species = {species}
 
-		tmp = self._species + list(species)
+		tmp = self._species + species #list(species)
 		self._species = sorted(set(tmp), key=tmp.index)
 		for sp in species:
 			for sec in self.sections:
@@ -835,7 +835,7 @@ class Section(param.Parameterized):
 
 	#@lru_cache(128)
 	def _param_array_diff_x(self):
-		return (self.x[1:] + self.x[:-1]) / 2
+		return (self.x[:-1] + self.x[1:]) / 2
 
 	#@lru_cache(128)
 	def _param_array_diff(self, param):
@@ -1060,7 +1060,7 @@ class _SimuChannel:
 		"""
 		V = V_S[self.idV, :]
 		S = [V_S[self.idS[k], :] for k in range(self.nb_var)]
-		y[np.s_[self.idV, :]] += next(self.I(V, *S, t, **self.params)) * self.k
+		np.add.at(y, np.s_[self.idV, :], next(self.I(V, *S, t, **self.params)) * self.k)
 		if not self.nb_var:
 			return
 		dS = next(self.dS(V, *S, t, **self.params))
@@ -1080,7 +1080,12 @@ class _SimuChannel:
 			V = V_S[self.idV]
 			S = [V_S[self.idS[k]] for k in range(self.nb_var)]
 			for k, ion in enumerate(ions):
-				y[self.idV, k] += (next(self.J(ion, V, *S, t, **self.params)) * self.k).squeeze()
+				np.add.at(
+					y,
+					np.s_[self.idV, k],
+					(next(self.J(ion, V, *S, t, **self.params)) * self.k).squeeze(),
+				)
+
 
 class VoltageSource:
 	"""Represents a Voltage Source V = f(t)"""
