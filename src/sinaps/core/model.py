@@ -59,6 +59,9 @@ class DiffusionCoefficientError(ValueError):
 			)
 		)
 
+def get_param_names(func):
+	code = func.__code__
+	return code.co_varnames[:code.co_argcount]
 
 class SectionAttribute(param.Range):
 	"""Parameter than can be a tuple or a value"""
@@ -167,6 +170,7 @@ class Neuron(param.Parameterized):
 		return G
 
 	@property
+	@lru_cache(1)
 	def sections(self):
 		G = self.graph
 		if self.__traversal_func__ is None:
@@ -241,7 +245,7 @@ class Neuron(param.Parameterized):
 				D = {species: D}
 			species = {species}
 
-		tmp = self._species + species
+		tmp = self._species + list(species)
 		self._species = sorted(set(tmp), key=tmp.index)
 		for sp in species:
 			for sec in self.sections:
@@ -284,7 +288,7 @@ class Neuron(param.Parameterized):
 		return self._species
 
 	@property
-	@lru_cache(128)
+	@lru_cache(1)
 	def nb_nodes(self):
 		"""Number of nodes of the neuron"""
 		return max([max(ij) for ij in self.sections.values()]) + 1
@@ -339,6 +343,7 @@ class Neuron(param.Parameterized):
 			cch[ch_cls] = ch
 		return cch
 
+	#@lru_cache(1)
 	def _all_Vsource(self):
 		"""Return voltage source objects suitable for the simulation."""
 		v_source = [c for s in self.sections for c in s.Vsource]
@@ -349,6 +354,7 @@ class Neuron(param.Parameterized):
 		source_mat = csr_matrix((data, (row, col)), (self.nb_comp, 1))
 		return v_source, source_mat
 
+	#@lru_cache(1)
 	def _capacitance_array(self):
 		"""Return the menbrane capacitance for each nodes.
 
@@ -363,6 +369,7 @@ class Neuron(param.Parameterized):
 
 		return Cm
 
+	#@lru_cache(1)
 	def _volume_array(self):
 		"""Return the volume of each nodes.
 
@@ -377,6 +384,7 @@ class Neuron(param.Parameterized):
 
 		return V
 
+	#@lru_cache(1)
 	def radius_array(self):
 		"""Return the radius of each nodes.
 
@@ -387,6 +395,7 @@ class Neuron(param.Parameterized):
 			a[s.idV] = s._param_array(s.a)
 		return a
 
+	#@lru_cache(1)
 	def _conductance_mat(self):
 		"""Return conductance matrix G of the neuron.
 
@@ -489,9 +498,8 @@ class Neuron(param.Parameterized):
 		"""
 		if self.dx is None:
 			raise SpatialError
-		# cc = np.concatenate
-		# return cc([cc([[0], s._difus_array(ion)]) for s in self.sections])
-		return np.ravel([[0, *s._difus_array(ion)] for s in self.sections])
+		arr = np.array([s._difus_array(ion) for s in self.sections])
+		return np.hstack((np.zeros((arr.shape[0], 1)), arr)).ravel()
 
 	@lru_cache(128)
 	def _difus_end(self, ion):
@@ -520,20 +528,9 @@ class Neuron(param.Parameterized):
 		return d, d_end
 
 	@lru_cache(128)
-	def _get_jtt(self, n, m, diag):
-		return dia_matrix(
-			(
-				diag,
-				[-1, 0, 1]
-			),
-			shape=(n, n+m)
-		).toarray()
-
-
-	@lru_cache(128)
 	def _get_idA_idB(self, n):
-		sections_values = list(self.sections.values())
-		sections_ids = [s.idV for s in self.sections]
+		sections_values = np.array(list(self.sections.values()))
+		sections_ids = np.array([s.idV for s in self.sections])
 		idA = np.ravel(sections_ids).T
 		idB = np.concatenate(sections_values).T + n
 		return idA, idB
@@ -581,13 +578,17 @@ class Neuron(param.Parameterized):
 		j1[1:] = d[1:] * (1 + k / 2 * Vtt)
 		j2[:-1] = d[1:] * (-1 + k / 2 * Vtt)
 
-		jtt = dia_matrix(
-			(
-				[-j2, j2 - j1, j1],
-				[-1, 0, 1]
-			),
-			shape=(n, n+m)
-		).toarray()
+		# jtt = dia_matrix(
+		# 	(
+		# 		[-j2, j2 - j1, j1],
+		# 		[-1, 0, 1]
+		# 	),
+		# 	shape=(n, n+m)
+		# ).toarray()
+		jtt = np.zeros((n, n + m))
+		jtt[np.arange(1, n), np.arange(n-1)] = -j2[:n-1]
+		jtt[np.arange(n), np.arange(n)] = j2[:n] - j1[:n]
+		jtt[np.arange(n), np.arange(1, n+1)] = j1[1:n+1]
 
 		# flux inside a section
 		idA, idB = self._get_idA_idB(n)
@@ -823,19 +824,30 @@ class Section(param.Parameterized):
 	def _continuous(self, param):
 		if callable(param):
 			return np.vectorize(param)
-		elif issubclass(type(param), tuple):
+		elif isinstance(param, tuple):
 			return interpolate.interp1d([0, self.L], param)
 		else:
 			return lambda x: param * np.ones_like(x)
 
+	#@lru_cache(128)
 	def _param_array(self, param):
 		return self._continuous(param)(self.x)
 
-	def _param_array_diff(self, param):
-		return self._continuous(param)((self.x[:-1] + self.x[1:]) / 2)
+	#@lru_cache(128)
+	def _param_array_diff_x(self):
+		return (self.x[1:] + self.x[:-1]) / 2
 
+	#@lru_cache(128)
+	def _param_array_diff(self, param):
+		return self._continuous(param)(self._param_array_diff_x())
+
+	#@lru_cache(128)
+	def _param_array_end_x(self):
+		return [self.x[0] / 2, (self.L + self.x[-1]) / 2]
+
+	#@lru_cache(128)
 	def _param_array_end(self, param):
-		return self._continuous(param)([self.x[0] / 2, (self.L + self.x[-1]) / 2])
+		return self._continuous(param)(self._param_array_end_x())
 
 	def _fill_V0_array(self, V0):
 		"""fill the initial potential for each nodes
@@ -907,6 +919,7 @@ class Section(param.Parameterized):
 		)  # [MΩ]
 
 	# Diffusion functions
+	@lru_cache(128)
 	def _difus_array(self, ion):
 		"""Return the diffusion coefficient D*a/dx between each node for ion
 		unit μm^3/ms
@@ -921,6 +934,7 @@ class Section(param.Parameterized):
 			self.x
 		)  # [μm^3/ms]
 
+	@lru_cache(128)
 	def _difus_end(self, ion):
 		"""Return the diffusion coefficient D*a/dx between the start/end of the section
 		and the first/last node for ion
@@ -998,7 +1012,6 @@ class Channel:
 		else:
 			return "/μm²"
 
-
 class _SimuChannel:
 	"""Class for vectorization of channels used for efficiency"""
 
@@ -1048,12 +1061,13 @@ class _SimuChannel:
 		V = V_S[self.idV, :]
 		S = [V_S[self.idS[k], :] for k in range(self.nb_var)]
 		y[np.s_[self.idV, :]] += next(self.I(V, *S, t, **self.params)) * self.k
-		if self.nb_var:
-			dS = next(self.dS(V, *S, t, **self.params))
-			if self.nb_var > 1:
-				y[self.idS, :] = dS
-			else:
-				y[self.idS[0], :] = dS
+		if not self.nb_var:
+			return
+		dS = next(self.dS(V, *S, t, **self.params))
+		if self.nb_var < 2:
+			y[self.idS[0], :] = dS
+		else:
+			y[self.idS, :] = dS
 
 	@profile
 	def fill_J(self, y, ions, V_S, t):
